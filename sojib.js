@@ -23,11 +23,6 @@ void async function () {
   `;
   document.head.appendChild(style);
 
-  function J(){
-    const d=new Date(Date.now()+24*60*60*1000);
-    return d.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
-  }
-
   function u(state){
     let badge="";
     if(state==="success") badge=`<div style="position:absolute;bottom:2px;right:2px;width:16px;height:16px;background:#10b981;border-radius:50%;border:2px solid #000;"></div>`;
@@ -89,9 +84,10 @@ void async function () {
     document.getElementById("akx_err").onclick = dismiss;
   }
 
-  function showSuccess(key){
+  function showSuccess(key, expires){
     clearInterval(ticker);
-    const expires = J();
+    // expires আসলে server থেকে, না আসলে আগামীকাল
+    const expStr = expires || new Date(Date.now()+24*60*60*1000).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
     k.innerHTML=`
       <div style="width:100%;max-width:370px;aspect-ratio:5/7;border-radius:24px;background:linear-gradient(180deg,#111 0%,#000 100%);border:1px solid rgba(255,255,255,.08);padding:32px 24px 24px;display:flex;flex-direction:column;position:relative;box-sizing:border-box;color:#fff;animation:akFadeIn .3s ease forwards,edgeSuccess 2.5s infinite ease-in-out;">
         ${u("success")}
@@ -101,7 +97,7 @@ void async function () {
             <p style="color:#34d399;font-family:ui-monospace,monospace;font-size:18px;font-weight:700;word-break:break-all;line-height:1;">${key}</p>
           </div>
           <div style="background:#0a0a0a;border:1px solid #1c1c1c;border-radius:12px;padding:10px 16px;">
-            <p style="color:#888;font-size:11px;font-weight:600;letter-spacing:1px;">EXPIRES: <span style="font-weight:800;color:#e4e4e7;">${expires}</span></p>
+            <p style="color:#888;font-size:11px;font-weight:600;letter-spacing:1px;">EXPIRES: <span style="font-weight:800;color:#e4e4e7;">${expStr}</span></p>
           </div>
         </div>
         <div style="display:flex;flex-direction:column;gap:12px;margin-top:auto;">
@@ -122,8 +118,51 @@ void async function () {
     document.getElementById("akx").onclick = dismiss;
   }
 
+  // DOM থেকে সরাসরি key extract — CORS bypass
+  function extractFromDOM(){
+    const patterns = [
+      // AINCRAD-XXX-XXX format — FIX #1
+      /(AINCRAD-[\w]+-[\w]+)/i,
+      // SYNOX format
+      /(SYNOX-[\w\-]+)/i,
+      // UUID format
+      /([A-F0-9]{8}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{12})/i,
+      // hex 32 char
+      /\b([a-f0-9]{32})\b/i,
+      // generic long key
+      /([\w]{4}-[\w]{4}-[\w]{4})/i,
+    ];
+
+    // পুরো page text scan
+    const pageText = document.body.innerText || "";
+    const pageHTML = document.body.innerHTML || "";
+
+    for(const p of patterns){
+      const m = (pageText + pageHTML).match(p);
+      if(m && m[1]) return m[1].trim();
+    }
+    return null;
+  }
+
+  // Expiry DOM থেকে বের করো
+  function extractExpiryFromDOM(){
+    const text = document.body.innerText || "";
+    // "EXPIRES: 09/30/2026, 03:23:07 PM" or "Sep 30, 2026" format
+    const m = text.match(/expires[:\s]+([^\n]{5,30})/i);
+    return m ? m[1].trim() : null;
+  }
+
   try {
-    // Step 1 — worker theke target URL nao
+    // Step 1 — আগে DOM চেক করো (already on getkey page হলে CORS লাগবে না)
+    const domKey = extractFromDOM();
+    if(domKey){
+      const domExpiry = extractExpiryFromDOM();
+      if(cancelled) return;
+      showSuccess(domKey, domExpiry);
+      return;
+    }
+
+    // Step 2 — worker থেকে target URL নাও
     const workerRes = await fetch(
       "https://zxi-file-loader.ah4734536.workers.dev?file=zxi.txt&key=Hey&user=2",
       { method:"GET", signal:M.signal }
@@ -131,23 +170,30 @@ void async function () {
     const targetUrl = (await workerRes.text()).trim();
     if(cancelled) return;
 
-    // Step 2 — token already URL e ache, tar sathe getkey hit koro
-    // URL format: https://aincradmods.com/getkey?token=XXXX
-    // token extract koro worker response theke
     const tokenMatch = targetUrl.match(/token=([a-f0-9]+)/i);
 
-    // Step 3 — multiple attempts
+    // Step 3 — attempts, credentials:omit আগে (CORS fix)
     const attempts = [
-      // original URL as-is
-      ()=> fetch(targetUrl, { credentials:"include", redirect:"follow", signal:M.signal }),
-      // omit credentials
       ()=> fetch(targetUrl, { credentials:"omit", redirect:"follow", signal:M.signal }),
-      // token direct API endpoint try
-      tokenMatch ? ()=> fetch(`https://aincradmods.com/api/getkey?token=${tokenMatch[1]}`, { credentials:"include", signal:M.signal }) : null,
+      ()=> fetch(targetUrl, { credentials:"include", redirect:"follow", signal:M.signal }),
+      tokenMatch ? ()=> fetch(`https://aincradmods.com/api/getkey?token=${tokenMatch[1]}`, { credentials:"omit", signal:M.signal }) : null,
       tokenMatch ? ()=> fetch(`https://aincradmods.com/key?token=${tokenMatch[1]}`, { credentials:"omit", signal:M.signal }) : null,
     ].filter(Boolean);
 
     let key = null;
+    let expires = null;
+
+    const keyPatterns = [
+      /(AINCRAD-[\w]+-[\w]+)/i,        // FIX #2 — AINCRAD format added
+      /(SYNOX-[\w\-]+)/i,
+      /([A-F0-9]{8}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{12})/i,
+      /font-mono[^>]*>([\s\S]*?)<\/code/i,
+      /<code[^>]*>([\w\-]{8,})<\/code>/i,
+      /data-key=["']([\w\-]+)["']/i,
+      /"key"\s*:\s*"([\w\-]+)"/i,
+      /\b([a-f0-9]{32})\b/,
+      /([\w]{4}-[\w]{4}-[\w]{4})/,
+    ];
 
     for(const attempt of attempts){
       if(cancelled) return;
@@ -155,49 +201,31 @@ void async function () {
         const r = await attempt();
         const html = await r.text();
         if(cancelled) return;
+        if(html.indexOf("no_session")!==-1||html.indexOf("anomaly")!==-1||html.indexOf("Just a moment")!==-1) continue;
 
-        // skip bad states
-        if(html.indexOf("no_session")!==-1 || html.indexOf("anomaly")!==-1 || html.indexOf("Just a moment")!==-1) continue;
+        // expiry extract
+        const expM = html.match(/expires[:\s"']+([^"'<\n]{5,30})/i);
+        if(expM) expires = expM[1].trim();
 
-        // pattern matching — broad
-        const patterns = [
-          /font-mono[^>]*>([\s\S]*?)<\/code/i,
-          /<code[^>]*>([\w\-]{8,})<\/code>/i,
-          /data-key=["']([\w\-]+)["']/i,
-          /"key"\s*:\s*"([\w\-]+)"/i,
-          /authorization[^"]*"([\w\-]{10,})"/i,
-          /([A-F0-9]{8}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{12})/i,
-          /(SYNOX-[\w\-]+)/i,
-          /key[^>]*>\s*([\w\-]{10,})\s*</i,
-        ];
-
-        for(const p of patterns){
+        for(const p of keyPatterns){
           const m = html.match(p);
-          if(m && m[1]){
-            key = m[1].trim();
-            break;
-          }
+          if(m && m[1]){ key=m[1].trim(); break; }
         }
-
         if(key) break;
-
       } catch(e){
         if(e.name==="AbortError") return;
-        continue; // next attempt
+        continue;
       }
     }
 
     if(cancelled) return;
 
     if(key){
-      showSuccess(key);
+      showSuccess(key, expires);
+    } else if(tokenMatch){
+      showSuccess(tokenMatch[1], expires);
     } else {
-      // token ta directly show koro as fallback — worker URL e already ache
-      if(tokenMatch){
-        showSuccess(tokenMatch[1]);
-      } else {
-        showError("TOKEN UNRESOLVED","Key could not be extracted. Try again immediately after completing all getkey steps.");
-      }
+      showError("TOKEN UNRESOLVED","Key could not be extracted. Complete all getkey steps first, then run again.");
     }
 
   } catch(err){
