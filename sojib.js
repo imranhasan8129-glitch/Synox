@@ -3,10 +3,6 @@ void async function () {
     return;
   }
 
-  if (document.cookie.indexOf("__session=") === -1) {
-    document.cookie = "__session=eyJnZXRrZXlfaW5pdGlhdGVkX2F0IjoxNzg5Mzc2Mzc1NDQxLCJnZXRrZXlfY29tcGxldGVkIjpmYWxzZX0%3D.m27QGejM%2Fe1p1g6eksDF6XfcPxFbVEsWWDmUbQFjxaM; path=/; max-age=86400; SameSite=Lax";
-  }
-
   function J() {
     const a = new Date(Date.now() + 86400000);
     return a.toLocaleString("en-US", {
