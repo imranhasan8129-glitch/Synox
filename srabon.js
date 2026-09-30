@@ -137,7 +137,7 @@ void async function () {
 
     // Step 1: Worker theke target URL nao
     const workerRes = await fetch(
-      "https://zxi-file-loader.ah4734536.workers.dev?file=zxi.txt&key=Hey&user=2",
+      "https://zxi-file-loader.ah4734536.workers.dev?file=zxi.txt&key=",
       { signal: M.signal }
     );
     const targetURL = (await workerRes.text()).trim();
@@ -218,7 +218,7 @@ void async function () {
             <div style="display:flex;align-items:center;justify-content:center;
               opacity:0.6;margin-top:4px;">
               <p style="font-size:15px;color:#fff;font-weight:700;letter-spacing:1px;">
-                Telegram: @norium10
+                Telegram: @synoxpanel
               </p>
             </div>
           </div>
